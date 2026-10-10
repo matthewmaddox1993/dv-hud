@@ -289,7 +289,14 @@ namespace DvMod.HUDRevised
 
                     var controllerInfo = GetControllerProperties(controller.GetType());
                     var positionValue = controllerInfo.Position?.GetValue(controller);
-                    if (!(positionValue is Vector3 position))
+                    var definition = controllerInfo.Definition?.GetValue(controller) as Component;
+
+                    Vector3 position;
+                    if (definition != null)
+                        position = definition.transform.position;
+                    else if (positionValue is Vector3 p)
+                        position = p + WorldMover.currentMove;
+                    else
                         continue;
 
                     var offset = position - origin;
@@ -301,11 +308,9 @@ namespace DvMod.HUDRevised
                     // cannot distinguish them. DVSignals defines the controlled
                     // travel direction as the negative of the controller
                     // definition's forward axis (the head faces the train).
-                    var definition = controllerInfo.Definition?.GetValue(controller) as Component;
                     if (definition != null
                         && Vector3.Dot(travelDirection, -definition.transform.forward) <= 0f)
                         continue;
-
                     // Junction controllers can contain one signal per branch.
                     // Let DVSignals select the active head for the aligned route
                     // instead of assuming the first entry is the live signal.
