@@ -2,7 +2,7 @@
 
 All notable changes to HUDRevised are recorded here.
 
-## [1.0.1]
+## [1.0.2]
 
 ### Added
 
@@ -23,7 +23,7 @@ All notable changes to HUDRevised are recorded here.
 - Scrolling the car list no longer repeatedly resets the HUD window height, which caused flicker.
 - The mass field no longer displays a permanent placeholder.
 - Signal status now ignores opposing-direction controllers and follows DVSignals' active route/head instead of always reading the nearest controller's first signal.
-- Per-car stress now measures the live `TrainStress.stress` value against the game's derail-stress threshold instead of displaying normally dormant derail buildup.
+- Per-car stress now shows accumulated derail buildup as a bounded percentage of the game's buildup threshold, avoiding misleading values far above 100%.
 - Signal direction matching now follows DVSignals' actual controlled direction, preventing the HUD from reporting the aspect of the signal head facing the opposite way.
 - When stationary, signal lookup now uses Derail Valley's normalized reverser neutral point so reverse-selected locomotives search in the correct direction.
 - DVSignals aspects such as `NEXT_STOP` now use their actual passing restriction, preventing proceed aspects from being mislabeled as STOP.
