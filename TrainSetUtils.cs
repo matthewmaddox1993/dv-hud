@@ -10,18 +10,28 @@ namespace DvMod.HUDRevised
     {
         private const string SignalManagerTypeName = "Signals.Game.SignalManager, Signals.Game";
         private const float SignalManagerRetryPeriod = 1f;
+        private const float SignalDirectionSpeedThreshold = 0.1f;
 
         private sealed class ControllerProperties
         {
             public readonly PropertyInfo? Name;
             public readonly PropertyInfo? Position;
             public readonly PropertyInfo? Signals;
+            public readonly PropertyInfo? Definition;
+            public readonly MethodInfo? GetControllerSignal;
 
             public ControllerProperties(Type type)
             {
                 Name = type.GetProperty("Name", BindingFlags.Instance | BindingFlags.Public);
                 Position = type.GetProperty("Position", BindingFlags.Instance | BindingFlags.Public);
                 Signals = type.GetProperty("Signals", BindingFlags.Instance | BindingFlags.Public);
+                Definition = type.GetProperty("Definition", BindingFlags.Instance | BindingFlags.Public);
+                GetControllerSignal = type.GetMethod(
+                    "GetControllerSignal",
+                    BindingFlags.Instance | BindingFlags.Public,
+                    binder: null,
+                    types: Type.EmptyTypes,
+                    modifiers: null);
             }
         }
 
@@ -45,6 +55,7 @@ namespace DvMod.HUDRevised
         {
             public readonly PropertyInfo? DisplayText;
             public readonly PropertyInfo? Id;
+            public readonly PropertyInfo? DisallowPassing;
             public readonly FieldInfo? IdField;
             public readonly MethodInfo? GetDefinition;
             public readonly FieldInfo? DefinitionIdField;
@@ -57,6 +68,8 @@ namespace DvMod.HUDRevised
                     candidate => candidate.FullName == "Signals.Game.Aspects.IAspect");
                 Id = type.GetProperty("Id", BindingFlags.Instance | BindingFlags.Public)
                     ?? aspectInterface?.GetProperty("Id", BindingFlags.Instance | BindingFlags.Public);
+                DisallowPassing = type.GetProperty("DisallowPassing", BindingFlags.Instance | BindingFlags.Public)
+                    ?? aspectInterface?.GetProperty("DisallowPassing", BindingFlags.Instance | BindingFlags.Public);
                 IdField = type.GetField("Id", BindingFlags.Instance | BindingFlags.Public);
                 GetDefinition = type.GetMethod("GetDefinition", BindingFlags.Instance | BindingFlags.Public)
                     ?? aspectInterface?.GetMethod("GetDefinition", BindingFlags.Instance | BindingFlags.Public);
@@ -263,7 +276,7 @@ namespace DvMod.HUDRevised
                     return false;
 
                 var origin = car.transform.position;
-                var forward = car.transform.forward;
+                var travelDirection = GetSignalTravelDirection(car);
                 var foundCurrent = false;
                 var foundUpcoming = false;
                 SignalCandidate nearest = default;
@@ -281,19 +294,36 @@ namespace DvMod.HUDRevised
 
                     var offset = position - origin;
                     var distanceSquared = offset.sqrMagnitude;
-                    if (distanceSquared < 1f || Vector3.Dot(forward, offset) < -10f)
+                    if (distanceSquared < 1f || Vector3.Dot(travelDirection, offset) < -10f)
                         continue;
 
-                    var signals = controllerInfo.Signals?.GetValue(controller) as System.Collections.IEnumerable;
-                    object? signal = null;
-                    if (signals != null)
+                    // Opposing signal heads are often colocated, so proximity
+                    // cannot distinguish them. DVSignals defines the controlled
+                    // travel direction as the negative of the controller
+                    // definition's forward axis (the head faces the train).
+                    var definition = controllerInfo.Definition?.GetValue(controller) as Component;
+                    if (definition != null
+                        && Vector3.Dot(travelDirection, -definition.transform.forward) <= 0f)
+                        continue;
+
+                    // Junction controllers can contain one signal per branch.
+                    // Let DVSignals select the active head for the aligned route
+                    // instead of assuming the first entry is the live signal.
+                    var signal = controllerInfo.GetControllerSignal?.Invoke(controller, null);
+                    if (signal == null)
                     {
-                        foreach (var signalObject in signals)
+                        // Compatibility fallback for DVSignals versions that do
+                        // not expose GetControllerSignal().
+                        var signals = controllerInfo.Signals?.GetValue(controller) as System.Collections.IEnumerable;
+                        if (signals != null)
                         {
-                            if (signalObject != null)
+                            foreach (var signalObject in signals)
                             {
-                                signal = signalObject;
-                                break;
+                                if (signalObject != null)
+                                {
+                                    signal = signalObject;
+                                    break;
+                                }
                             }
                         }
                     }
@@ -329,6 +359,20 @@ namespace DvMod.HUDRevised
                 Main.DebugLog($"DVSignals integration unavailable: {ex.Message}");
                 return false;
             }
+        }
+
+        private static Vector3 GetSignalTravelDirection(TrainCar car)
+        {
+            var forward = car.transform.forward;
+            var forwardSpeed = car.GetForwardSpeed();
+            if (Mathf.Abs(forwardSpeed) > SignalDirectionSpeedThreshold)
+                return forwardSpeed >= 0f ? forward : -forward;
+
+            var reverser = car.GetComponent<DV.Simulation.Controllers.ReverserControl>();
+            return reverser != null
+                && reverser.Value < DV.Simulation.Controllers.ReverserControl.NEUTRAL_VALUE
+                ? -forward
+                : forward;
         }
 
         /// <summary>
@@ -500,20 +544,35 @@ namespace DvMod.HUDRevised
             if (string.IsNullOrWhiteSpace(status))
                 status = "Unknown";
             status = status ?? "Unknown";
-            status = FormatSignalStatus(status);
+            var disallowPassing = ReadBool(aspect, aspectInfo?.DisallowPassing);
+            status = FormatSignalStatus(status, disallowPassing);
 
             return new SignalInfo(name, status, Mathf.Sqrt(candidate.DistanceSquared));
         }
 
-        private static string FormatSignalStatus(string status)
+        private static string FormatSignalStatus(string status, bool? disallowPassing)
         {
-            var normalized = status.ToUpperInvariant();
-            if (normalized.IndexOf("STOP", StringComparison.Ordinal) >= 0)
+            var normalized = status.Replace('_', ' ').Replace('-', ' ').Trim().ToUpperInvariant();
+
+            // DVSignals aspect IDs describe both the current and following
+            // signal. For example, NEXT_STOP still permits passing this signal.
+            // Prefer the aspect's authoritative movement restriction instead
+            // of treating every ID containing the word "stop" as a stop aspect.
+            if (disallowPassing == true)
                 return "STOP";
             if (normalized.IndexOf("REDUC", StringComparison.Ordinal) >= 0
+                || normalized.StartsWith("RESTRICTED", StringComparison.Ordinal)
                 || normalized.IndexOf("CAUTION", StringComparison.Ordinal) >= 0
                 || normalized.IndexOf("APPROACH", StringComparison.Ordinal) >= 0)
                 return "REDUCE SPEED";
+            if (disallowPassing == false)
+                return "PROCEED";
+
+            // Compatibility fallback for aspect implementations that do not
+            // expose IAspect.DisallowPassing.
+            if (normalized == "STOP"
+                || normalized.StartsWith("STOP ", StringComparison.Ordinal))
+                return "STOP";
             if (normalized.IndexOf("PROCEED", StringComparison.Ordinal) >= 0
                 || normalized.IndexOf("CLEAR", StringComparison.Ordinal) >= 0)
                 return "PROCEED";
@@ -540,6 +599,15 @@ namespace DvMod.HUDRevised
 
             var value = property?.GetValue(instance);
             return value?.ToString();
+        }
+
+        private static bool? ReadBool(object? instance, PropertyInfo? property)
+        {
+            if (instance == null)
+                return null;
+
+            var value = property?.GetValue(instance);
+            return value is bool boolValue ? boolValue : (bool?)null;
         }
 
         private static string? ReadString(object? instance, FieldInfo? field)

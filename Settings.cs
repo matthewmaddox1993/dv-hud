@@ -295,7 +295,9 @@ namespace DvMod.HUDRevised
 
         public DrivingInfoSettings drivingInfoSettings = new DrivingInfoSettings();
 
-        [Draw("Upcoming track info", Collapsible = true, Box = true)]
+        // Retained for compatibility with existing settings files. Upcoming
+        // track-event rendering is not included in this build, so do not
+        // expose these inactive settings in the mod UI.
         public TrackInfoSettings trackInfoSettings = new TrackInfoSettings();
 
         [Draw("Train info", Collapsible = true, Box = true)]

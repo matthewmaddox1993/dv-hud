@@ -49,7 +49,11 @@ namespace DvMod.HUDRevised
             var updated = new List<CarDetails>(trainset.cars.Count);
             var taskCache = new Dictionary<Job, List<TaskData>>();
             var jobsManager = JobsManager.Instance;
-            var threshold = DV.Globals.G?.GameParams?.DerailBuildUpThreshold ?? 0f;
+            // TrainStress.stress is the live lateral stress magnitude. Compare
+            // it with the point where the game begins accumulating derail
+            // buildup; derailBuildUp itself normally remains zero and therefore
+            // is not a useful live stress reading.
+            var threshold = DV.Globals.G?.GameParams?.DerailStressThreshold ?? 0f;
 
             foreach (var car in trainset.cars)
             {
@@ -62,7 +66,7 @@ namespace DvMod.HUDRevised
 
                 if (settings.showCarStress && car.stress != null && threshold > 0f)
                 {
-                    stressPercent = car.stress.derailBuildUp / threshold * 100f;
+                    stressPercent = Mathf.Max(0f, car.stress.stress / threshold * 100f);
                     stress = $"{stressPercent:F0}%";
                 }
 

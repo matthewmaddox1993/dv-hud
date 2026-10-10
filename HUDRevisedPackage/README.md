@@ -87,6 +87,8 @@ L-001\\nBOXCAR
 
 Car cards reserve two lines for names so the columns stay aligned while showing identifiers and vehicle types.
 
+The `STRESS` percentage is the car's current live train-stress magnitude divided by the game's derail-stress threshold. It can exceed 100% briefly; sustained stress above that threshold causes the game to accumulate derail buildup. A stationary or gently moving car normally reads near 0%.
+
 ## Derail Valley 99.7 compatibility
 
 The current build uses the public 99.7-compatible data paths. Legacy locomotive-specific providers that depended on older game APIs are disabled until those APIs are stable. The supported live providers and train-consist display remain available.
