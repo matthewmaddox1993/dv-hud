@@ -1,0 +1,64 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <RootNamespace>DvMod.HUDRevised</RootNamespace>
+    <Version>1.0.1</Version>
+    <InformationalVersion>1.0.1</InformationalVersion>
+    <LangVersion>8.0</LangVersion>
+    <Nullable>enable</Nullable>
+    <!-- Override this property when Derail Valley is installed elsewhere. -->
+    <DerailValleyDir Condition="'$(DerailValleyDir)' == ''">D:\Games\Derail Valley</DerailValleyDir>
+    <DerailValleyManagedDir>$(DerailValleyDir)\DerailValley_Data\Managed</DerailValleyManagedDir>
+    <UnityModManagerDir>$(DerailValleyManagedDir)\UnityModManager</UnityModManagerDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="QuantitiesNet\**\*.cs" />
+    <Compile Remove="TrackEvents\**\*.cs" />
+    <Compile Remove="Overlay\EventList.cs" />
+    <None Include="QuantitiesNet\**\*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.0" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="Assembly-CSharp"><HintPath>$(DerailValleyManagedDir)\Assembly-CSharp.dll</HintPath><Private>False</Private></Reference>
+    <Reference Include="0Harmony"><HintPath>$(UnityModManagerDir)\0Harmony.dll</HintPath><Private>False</Private></Reference>
+    <Reference Include="BezierCurves"><HintPath>$(DerailValleyManagedDir)\BezierCurves.dll</HintPath><Private>False</Private></Reference>
+    <Reference Include="DV.BrakeSystem"><HintPath>$(DerailValleyManagedDir)\DV.BrakeSystem.dll</HintPath><Private>False</Private></Reference>
+    <Reference Include="DV.PointSet"><HintPath>$(DerailValleyManagedDir)\DV.PointSet.dll</HintPath><Private>False</Private></Reference>
+    <Reference Include="DV.Utils"><HintPath>$(DerailValleyManagedDir)\DV.Utils.dll</HintPath><Private>False</Private></Reference>
+    <Reference Include="DV.RailTrack"><HintPath>$(DerailValleyManagedDir)\DV.RailTrack.dll</HintPath><Private>False</Private></Reference>
+    <Reference Include="DV.Simulation"><HintPath>$(DerailValleyManagedDir)\DV.Simulation.dll</HintPath><Private>False</Private></Reference>
+    <Reference Include="DV.ThingTypes"><HintPath>$(DerailValleyManagedDir)\DV.ThingTypes.dll</HintPath><Private>False</Private></Reference>
+    <Reference Include="CommandTerminal"><HintPath>$(DerailValleyManagedDir)\CommandTerminal.dll</HintPath><Private>False</Private></Reference>
+    <Reference Include="WorldStreamer"><HintPath>$(DerailValleyManagedDir)\WorldStreamer.dll</HintPath><Private>False</Private></Reference>
+    <Reference Include="UnityEngine"><HintPath>$(DerailValleyManagedDir)\UnityEngine.dll</HintPath><Private>False</Private></Reference>
+    <Reference Include="UnityEngine.CoreModule"><HintPath>$(DerailValleyManagedDir)\UnityEngine.CoreModule.dll</HintPath><Private>False</Private></Reference>
+    <Reference Include="UnityEngine.IMGUIModule"><HintPath>$(DerailValleyManagedDir)\UnityEngine.IMGUIModule.dll</HintPath><Private>False</Private></Reference>
+    <Reference Include="UnityEngine.PhysicsModule"><HintPath>$(DerailValleyManagedDir)\UnityEngine.PhysicsModule.dll</HintPath><Private>False</Private></Reference>
+    <Reference Include="UnityEngine.TextRenderingModule"><HintPath>$(DerailValleyManagedDir)\UnityEngine.TextRenderingModule.dll</HintPath><Private>False</Private></Reference>
+    <Reference Include="UnityModManager"><HintPath>$(UnityModManagerDir)\UnityModManager.dll</HintPath><Private>False</Private></Reference>
+    <Reference Include="net.smkd.vector3d"><HintPath>$(DerailValleyManagedDir)\net.smkd.vector3d.dll</HintPath><Private>False</Private></Reference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="QuantitiesNet\QuantitiesNet.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <PackageStagingDir>$(IntermediateOutputPath)HUDRevisedPackage</PackageStagingDir>
+    <PackageArchive>$(ProjectDir)bin\$(Configuration)\$(TargetFramework)\$(AssemblyName)-$(InformationalVersion).zip</PackageArchive>
+  </PropertyGroup>
+
+  <Target Name="PackageMod" AfterTargets="Build">
+    <RemoveDir Directories="$(PackageStagingDir)" />
+    <MakeDir Directories="$(PackageStagingDir)" />
+    <Copy SourceFiles="$(TargetPath);$(TargetDir)QuantitiesNet.dll;$(ProjectDir)info.json;$(ProjectDir)README.md;$(ProjectDir)CHANGELOG.md"
+          DestinationFolder="$(PackageStagingDir)" />
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -Command &quot;Compress-Archive -Path '$(PackageStagingDir)\*' -DestinationPath '$(PackageArchive)' -Force&quot;" />
+    <Message Importance="high" Text="Created mod package: $(PackageArchive)" />
+  </Target>
+</Project>

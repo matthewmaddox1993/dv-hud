@@ -1,0 +1,13 @@
+{
+  "Id": "HUDRevised",
+  "DisplayName": "HUDRevised",
+  "Author": "Zeibach",
+  "Version": "1.0.1",
+  "LoadAfter": ["DVCustomCarLoader", "DVSignals", "Revised_Mph"],
+  "AssemblyName": "HUDRevised.dll",
+  "EntryMethod": "DvMod.HUDRevised.Main.Load",
+  "HomePage": "https://www.nexusmods.com/derailvalley/mods/1757",
+  "Repository": "https://raw.githubusercontent.com/matthewmaddox1993/dv-hud/refs/heads/master/resources/repository.json"
+
+ 
+}

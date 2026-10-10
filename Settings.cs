@@ -1,0 +1,347 @@
+using System.Collections.Generic;
+using System.Linq;
+using QuantitiesNet;
+using UnityEngine;
+using UnityModManagerNet;
+
+namespace DvMod.HUDRevised
+{
+    public class Settings : UnityModManager.ModSettings, IDrawable
+    {
+        public class DrivingInfoSettings
+        {
+            public bool enabled = true;
+            public HashSet<string> disabledProviders = new HashSet<string>(Registry.providers.Keys);
+            public List<ProviderSettings> providerSettings = new List<ProviderSettings>();
+
+            private (int providerIndex, bool moveUp)? orderChange = null;
+
+            static DrivingInfoSettings()
+            {
+                UnitRegistry.Default.Add(Unit.Of<Dimensions.MassFlow>("kg/h", 1, QuantitiesNet.Units.Kilogram / QuantitiesNet.Units.Hour));
+                UnitRegistry.Default.Add(Unit.Of<Dimensions.MassFlow>("lb/h", 1, QuantitiesNet.Units.Pound / QuantitiesNet.Units.Hour));
+                UnitRegistry.Default.Add(Unit.Of<Dimensions.Power>("btu/m", 1, QuantitiesNet.Units.Btu / QuantitiesNet.Units.Minute));
+            }
+
+            public class ProviderSettings
+            {
+                public string providerLabel = "";
+                public string unitSymbol = "";
+                public int precision;
+
+                public override string ToString() => $"{providerLabel}: {unitSymbol}, {precision}";
+
+                public bool TryGetUnit(Dimension dimension, out Unit unit)
+                {
+                    var symbol = providerLabel == "Speed"
+                        ? TrainSetUtils.DefaultSpeedUnitSymbol
+                        : unitSymbol;
+                    if (symbol.Length == 0)
+                        symbol = GetDisplaySymbols(dimension).FirstOrDefault() ?? "";
+                    var maybeUnit = UnitForSymbol(dimension, symbol);
+                    if (maybeUnit == null)
+                    {
+#pragma warning disable CS8625
+                        unit = default;
+#pragma warning restore CS8625
+                        return false;
+                    }
+
+                    unit = (Unit)maybeUnit;
+                    return true;
+                }
+
+                private static Unit? UnitForSymbol(Dimension dimension, string symbol)
+                {
+                    if (UnitRegistry.Default.TryGetUnits(dimension, out var units))
+                    {
+                        return units.Find(unit => unit.Symbol == symbol);
+                    }
+                    return default;
+                }
+            }
+
+            private void DrawOrderButtons(int providerIndex)
+            {
+                GUILayout.BeginVertical(GUILayout.Width(30));
+
+                GUI.enabled = providerIndex > 0;
+                var upPressed = GUILayout.Button("^");//, GUILayout.Width(30), GUILayout.ExpandWidth(false));
+                GUI.enabled = providerIndex + 1 < providerSettings.Count;
+                var downPressed = GUILayout.Button("v");//, GUILayout.Width(30), GUILayout.ExpandWidth(false));
+                GUI.enabled = true;
+
+                if (upPressed)
+                    orderChange = (providerIndex, moveUp: true);
+                if (downPressed)
+                    orderChange = (providerIndex, moveUp: false);
+
+                GUILayout.EndVertical();
+            }
+
+            private void DrawPrecisionSettings(ProviderSettings settings)
+            {
+                UnityModManager.UI.DrawIntField(
+                    ref settings.precision, "Precision", style: null, GUILayout.Width(20), GUILayout.ExpandWidth(false));
+                if (settings.precision < 0)
+                    settings.precision = 0;
+            }
+
+            private void DrawUnitSettings(IQuantityProvider provider)
+            {
+                var dimension = provider.Dimension;
+                var settings = GetProviderSettings(provider);
+
+                var symbols = GetDisplaySymbols(dimension).ToList();
+                if (symbols.Count == 0)
+                    return;
+
+                var currentSymbol = settings.unitSymbol;
+                if (currentSymbol.Length == 0 && provider.Label == "Speed")
+                    currentSymbol = TrainSetUtils.DefaultSpeedUnitSymbol;
+                var selectedIndex = symbols.IndexOf(currentSymbol);
+                if (selectedIndex < 0)
+                {
+                    if (settings.unitSymbol.Length != 0)
+                        settings.unitSymbol = symbols[0];
+                    selectedIndex = 0;
+                }
+
+                var changed = UnityModManager.UI.ToggleGroup(
+                    ref selectedIndex, symbols.ToArray(), style: null, GUILayout.MinWidth(50), GUILayout.ExpandWidth(false));
+                if (changed)
+                    settings.unitSymbol = symbols[selectedIndex];
+            }
+
+            private void DrawProviderSettings(ProviderSettings settings, int providerIndex)
+            {
+                var label = settings.providerLabel;
+                if (!Registry.providers.TryGetValue(label, out var provider) || provider.Hidden)
+                    return;
+
+                GUILayout.BeginHorizontal("box");
+
+                DrawOrderButtons(providerIndex);
+
+                GUILayout.BeginVertical();
+                GUILayout.Space(5);
+
+                GUILayout.BeginHorizontal();
+
+                var result = GUILayout.Toggle(
+                    !disabledProviders.Contains(label), image: null, GUILayout.Width(20), GUILayout.ExpandWidth(false));
+                if (result)
+                    disabledProviders.Remove(label);
+                else
+                    disabledProviders.Add(label);
+
+                GUILayout.Label(label, GUILayout.MinWidth(150), GUILayout.ExpandWidth(false));
+
+                if (provider is IQuantityProvider quantityProvider)
+                {
+                    DrawPrecisionSettings(settings);
+                    if (provider.Label == "Speed")
+                        GUILayout.Label($"Auto: {TrainSetUtils.DefaultSpeedUnitSymbol}", GUILayout.ExpandWidth(false));
+                    else
+                        DrawUnitSettings(quantityProvider);
+                }
+
+                GUILayout.EndHorizontal();
+                GUILayout.EndVertical();
+
+                GUILayout.EndHorizontal();
+            }
+
+            private void DrawProviderSettings()
+            {
+                orderChange = null;
+
+                foreach (var (settings, index) in providerSettings.Select((x, i) => (x, i)))
+                    DrawProviderSettings(settings, index);
+
+                if (orderChange.HasValue)
+                {
+                    var index = orderChange.Value.providerIndex;
+                    var settings = providerSettings[index];
+                    providerSettings.RemoveAt(index);
+                    providerSettings.Insert(index + (orderChange.Value.moveUp ? -1 : 1), settings);
+                }
+            }
+
+            public void Draw()
+            {
+                GUILayout.Label("Driving info");
+                GUILayout.BeginVertical("box");
+
+                GUILayout.BeginHorizontal();
+                GUILayout.Label("Enable", GUILayout.ExpandWidth(false));
+                enabled = GUILayout.Toggle(enabled, "");
+                GUILayout.EndHorizontal();
+
+                if (enabled)
+                    DrawProviderSettings();
+                GUILayout.EndVertical();
+            }
+
+            public bool IsEnabled(IDataProvider dp) => !disabledProviders.Contains(dp.Label);
+
+            private readonly static Dictionary<Dimension, List<string>> KnownUnits = new Dictionary<Dimension, List<string>>()
+            {
+                { Dimensions.Force.dimension, new List<string>() { "kN", "lbf" } },
+                { Dimensions.Length.dimension, new List<string>() { "m", "ft" } },
+                { Dimensions.Mass.dimension, new List<string>() { "kg", "lb" } },
+                { Dimensions.Power.dimension, new List<string>() { "kW", "hp", "btu/m" } },
+                { Dimensions.Pressure.dimension, new List<string>() { "bar", "psi" } },
+                { Dimensions.Velocity.dimension, new List<string>() { "km/h", "mph" } },
+            };
+
+            private static IEnumerable<string> GetDisplaySymbols(Dimension dimension)
+            {
+                if (KnownUnits.TryGetValue(dimension, out var symbols))
+                    return symbols;
+
+                // fallback to all registered units if not known
+                if (UnitRegistry.Default.TryGetUnits(dimension, out var units))
+                    return units.Select(unit => unit.Symbol);
+
+                return Enumerable.Empty<string>();
+            }
+
+            public void EnsureProviderSettings(IDataProvider provider)
+            {
+                var settings = GetProviderSettings(provider);
+                // Older/default configs have no chosen pressure unit and use
+                // zero precision, which rounds live bar pressure to a whole
+                // number. Give that untouched default one decimal.
+                if (provider.Label == "Brake pipe"
+                    && settings.unitSymbol.Length == 0
+                    && settings.precision == 0)
+                {
+                    settings.unitSymbol = "bar";
+                    settings.precision = 1;
+                }
+            }
+
+            public ProviderSettings GetProviderSettings(IDataProvider provider)
+            {
+                var label = provider.Label;
+                var settings = providerSettings.Find(p => p.providerLabel == label);
+                if (settings == default)
+                {
+                    settings = new ProviderSettings()
+                    {
+                        providerLabel = label,
+                        unitSymbol = label == "Brake pipe" ? "bar" : "",
+                        precision = label == "Brake pipe" ? 1 : 0,
+                    };
+                    providerSettings.Add(settings);
+                }
+                return settings;
+            }
+
+            public IEnumerable<IDataProvider> OrderedProviders()
+            {
+                foreach (var label in providerSettings.Select(settings => settings.providerLabel))
+                {
+                    if (Registry.providers.TryGetValue(label, out var provider)
+                        && !provider.Hidden && IsEnabled(provider))
+                        yield return provider;
+                }
+            }
+        }
+
+        public class TrackInfoSettings
+        {
+            public enum EventDistanceUnits
+            {
+                m,
+                mi,
+                ft,
+            }
+            [Draw("Enable")] public bool enabled = true;
+            [Draw("Max events", VisibleOn = "enabled|true")] public int maxEventCount = 10;
+            [Draw("Max distance", VisibleOn = "enabled|true")] public double maxEventSpan = 5000;
+            [Draw("Distance units", Type = DrawType.ToggleGroup)] public EventDistanceUnits distanceUnits = EventDistanceUnits.m;
+        }
+
+        public class TrainInfoSettings
+        {
+            public enum LengthUnits
+            {
+                m,
+                ft,
+            }
+            [Draw("Enable")] public bool enabled = true;
+            [Draw("Length & mass")] public bool showTrainInfo = true;
+            [Draw("Length units", Type = DrawType.ToggleGroup)] public LengthUnits lengthUnits = LengthUnits.m;
+            [Draw("Car list")] public bool showCarList = true;
+            [Draw("Update period", Min = 0f, VisibleOn = "showCarList|true")] public float updatePeriod = 0.25f;
+            [Draw("Group by job", VisibleOn = "showCarList|true")] public bool groupCarsByJob = true;
+            [Draw("Stress", VisibleOn = "showCarList|true")] public bool showCarStress = true;
+            [Draw("Job ID", VisibleOn = "showCarList|true")] public bool showCarJobs = true;
+            [Draw("Destination", VisibleOn = "showCarList|true")] public bool showCarDestinations = true;
+            [Draw("Brake status", VisibleOn = "showCarList|true")] public bool showCarBrakeStatus = true;
+        }
+
+        public class SignalInfoSettings
+        {
+            [Draw("Enable")] public bool enabled = true;
+            [Draw("Current signal", VisibleOn = "enabled|true")] public bool showCurrent = true;
+            [Draw("Upcoming signal", VisibleOn = "enabled|true")] public bool showUpcoming = true;
+            [Draw("Distance", VisibleOn = "enabled|true")] public bool showDistance = true;
+        }
+
+        public static Vector2 defaultPosition = new Vector2(10, 10);
+
+        public DrivingInfoSettings drivingInfoSettings = new DrivingInfoSettings();
+
+        [Draw("Upcoming track info", Collapsible = true, Box = true)]
+        public TrackInfoSettings trackInfoSettings = new TrackInfoSettings();
+
+        [Draw("Train info", Collapsible = true, Box = true)]
+        public TrainInfoSettings trainInfoSettings = new TrainInfoSettings();
+
+        [Draw("Signals", Collapsible = true, Box = true)]
+        public SignalInfoSettings signalInfoSettings = new SignalInfoSettings();
+
+        [Draw("Enable logging")] public bool enableLogging;
+        [Draw("Lock position")] public bool lockPosition;
+        [Draw("Only show inside locomotive")] public bool onlyShowInsideLocomotive;
+
+        public readonly string? version = Main.mod?.Info.Version;
+
+        public Vector2 hudPosition;
+
+        public bool IsEnabled(IDataProvider dp) => drivingInfoSettings.IsEnabled(dp);
+
+        override public void Save(UnityModManager.ModEntry entry) => Save<Settings>(this, entry);
+
+        public void Draw()
+        {
+            drivingInfoSettings.Draw();
+            DrawDvSignalsStatus();
+            this.Draw(Main.mod);
+        }
+
+        private static void DrawDvSignalsStatus()
+        {
+            GUILayout.Label("DV Signals");
+            GUILayout.BeginVertical("box");
+
+            if (!TrainSetUtils.IsDvSignalsInstalled)
+            {
+                GUILayout.Label("DV Signals: Not installed");
+            }
+            else
+            {
+                GUILayout.Label("DV Signals: Installed");
+            }
+
+            GUILayout.EndVertical();
+        }
+
+        public void OnChange()
+        {
+        }
+    }
+}
