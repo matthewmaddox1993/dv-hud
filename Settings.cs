@@ -286,8 +286,8 @@ namespace DvMod.HUDRevised
         public class SignalInfoSettings
         {
             [Draw("Enable")] public bool enabled = true;
-            [Draw("Current signal", VisibleOn = "enabled|true")] public bool showCurrent = true;
-            [Draw("Upcoming signal", VisibleOn = "enabled|true")] public bool showUpcoming = true;
+            [Draw("Next signal", VisibleOn = "enabled|true")] public bool showCurrent = true;
+
             [Draw("Distance", VisibleOn = "enabled|true")] public bool showDistance = true;
         }
 

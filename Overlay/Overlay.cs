@@ -326,7 +326,7 @@ namespace DvMod.HUDRevised
 
             var signalSettings = Main.settings.signalInfoSettings;
             if (!signalSettings.enabled
-                || (!signalSettings.showCurrent && !signalSettings.showUpcoming)
+                || !signalSettings.showCurrent
                 || !TrainSetUtils.IsDvSignalsInstalled
                 || !playerActuallyInsideLocomotive)
             {
@@ -496,7 +496,7 @@ namespace DvMod.HUDRevised
             var showDrivingInfo = Main.settings.drivingInfoSettings.enabled && drivingInfo.Count > 0;
             var signalSettings = Main.settings.signalInfoSettings;
             var showSignalInfo = signalSettings.enabled && hasSignalInfo
-                && (signalSettings.showCurrent || signalSettings.showUpcoming);
+                && signalSettings.showCurrent;
 
             var availableWidth = Screen.width - Main.settings.hudPosition.x - 18f;
             var stackTopPanels = showDrivingInfo && showSignalInfo && availableWidth < 460f;
@@ -559,7 +559,7 @@ namespace DvMod.HUDRevised
         private void DrawSignalInfo()
         {
             var settings = Main.settings.signalInfoSettings;
-            if (!settings.showCurrent && !settings.showUpcoming)
+            if (!settings.showCurrent)
                 return;
             if (!hasSignalInfo)
                 return;
@@ -567,12 +567,7 @@ namespace DvMod.HUDRevised
             GUILayout.BeginVertical(Styles.panel, GUILayout.ExpandHeight(false));
             DrawPanelHeader("SIGNALS", "DV SIGNALS");
             if (settings.showCurrent)
-                DrawSignalRow("CURRENT", currentSignal, settings.showDistance);
-            if (settings.showUpcoming && upcomingSignal.name != null)
-            {
-                GUILayout.Space(7f);
-                DrawSignalRow("NEXT", upcomingSignal, settings.showDistance);
-            }
+                DrawSignalRow("NEXT", currentSignal, settings.showDistance);
             GUILayout.EndVertical();
         }
 
@@ -593,7 +588,7 @@ namespace DvMod.HUDRevised
             GUILayout.Label(signal.status, GetSignalStatusStyle(signal.status));
             GUILayout.FlexibleSpace();
             if (showDistance)
-                GUILayout.Label($"{signal.distance:F0} m", Styles.metricValue);
+                GUILayout.Label($"{signal.distance * 3.28084f:F0} FT", Styles.metricValue);
             GUILayout.EndHorizontal();
             GUILayout.Label(signal.name, Styles.signalName);
             GUILayout.EndVertical();
@@ -657,7 +652,7 @@ namespace DvMod.HUDRevised
             var settings = Main.settings;
             return (settings.drivingInfoSettings.enabled && drivingInfo.Count > 0)
                 || (settings.signalInfoSettings.enabled && hasSignalInfo
-                    && (settings.signalInfoSettings.showCurrent || settings.signalInfoSettings.showUpcoming))
+                    && settings.signalInfoSettings.showCurrent)
                 || (settings.trainInfoSettings.enabled && hasTrainInfo
                     && (settings.trainInfoSettings.showTrainInfo || settings.trainInfoSettings.showCarList));
         }
