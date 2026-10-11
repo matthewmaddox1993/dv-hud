@@ -17,8 +17,11 @@ namespace DvMod.HUDRevised
             public readonly PropertyInfo? Name;
             public readonly PropertyInfo? Position;
             public readonly PropertyInfo? Signals;
+            public readonly PropertyInfo? ShuntingSignals;
+            public readonly PropertyInfo? AllSignals;
             public readonly PropertyInfo? Definition;
             public readonly MethodInfo? GetControllerSignal;
+            public readonly MethodInfo? GetControllerShuntingSignal;
             public readonly PropertyInfo? PlacementInfo;
             public readonly FieldInfo? PlacementTrack;
             public readonly PropertyInfo? StartingTrack;
@@ -29,9 +32,17 @@ namespace DvMod.HUDRevised
                 Name = type.GetProperty("Name", BindingFlags.Instance | BindingFlags.Public);
                 Position = type.GetProperty("Position", BindingFlags.Instance | BindingFlags.Public);
                 Signals = type.GetProperty("Signals", BindingFlags.Instance | BindingFlags.Public);
+                ShuntingSignals = type.GetProperty("ShuntingSignals", BindingFlags.Instance | BindingFlags.Public);
+                AllSignals = type.GetProperty("AllSignals", BindingFlags.Instance | BindingFlags.Public);
                 Definition = type.GetProperty("Definition", BindingFlags.Instance | BindingFlags.Public);
                 GetControllerSignal = type.GetMethod(
                     "GetControllerSignal",
+                    BindingFlags.Instance | BindingFlags.Public,
+                    binder: null,
+                    types: Type.EmptyTypes,
+                    modifiers: null);
+                GetControllerShuntingSignal = type.GetMethod(
+                    "GetControllerShuntingSignal",
                     BindingFlags.Instance | BindingFlags.Public,
                     binder: null,
                     types: Type.EmptyTypes,
@@ -93,12 +104,14 @@ namespace DvMod.HUDRevised
         private readonly struct SignalCandidate
         {
             public readonly object Signal;
+            public readonly object? ControllerInstance;
             public readonly ControllerProperties Controller;
             public readonly float DistanceSquared;
 
-            public SignalCandidate(object signal, ControllerProperties controller, float distanceSquared)
+            public SignalCandidate(object signal, object? controllerInstance, ControllerProperties controller, float distanceSquared)
             {
                 Signal = signal;
+                ControllerInstance = controllerInstance;
                 Controller = controller;
                 DistanceSquared = distanceSquared;
             }
@@ -305,6 +318,64 @@ namespace DvMod.HUDRevised
             return null;
         }
 
+        private static object? GetActiveSignal(object controller, ControllerProperties info)
+        {
+            try
+            {
+                var sig = info.GetControllerSignal?.Invoke(controller, null);
+                if (sig != null)
+                    return sig;
+
+                sig = info.GetControllerShuntingSignal?.Invoke(controller, null);
+                if (sig != null)
+                    return sig;
+
+                if (info.Signals != null)
+                {
+                    var list = info.Signals.GetValue(controller) as System.Collections.IEnumerable;
+                    if (list != null)
+                    {
+                        foreach (var item in list)
+                        {
+                            if (item != null)
+                                return item;
+                        }
+                    }
+                }
+
+                if (info.ShuntingSignals != null)
+                {
+                    var list = info.ShuntingSignals.GetValue(controller) as System.Collections.IEnumerable;
+                    if (list != null)
+                    {
+                        foreach (var item in list)
+                        {
+                            if (item != null)
+                                return item;
+                        }
+                    }
+                }
+
+                if (info.AllSignals != null)
+                {
+                    var list = info.AllSignals.GetValue(controller) as System.Collections.IEnumerable;
+                    if (list != null)
+                    {
+                        foreach (var item in list)
+                        {
+                            if (item != null)
+                                return item;
+                        }
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            return null;
+        }
+
         private static List<RailTrack> GetRouteTracksAhead(TrainCar car, Vector3 travelDirection, int maxTracks = 25)
         {
             var tracks = new List<RailTrack>();
@@ -317,15 +388,20 @@ namespace DvMod.HUDRevised
                     : (reverser == null || reverser.Value >= DV.Simulation.Controllers.ReverserControl.NEUTRAL_VALUE);
 
                 var leadingBogie = forward ? car.FrontBogie : car.RearBogie;
-                if (leadingBogie == null)
-                    leadingBogie = car.FrontBogie ?? car.RearBogie;
+                var trailingBogie = forward ? car.RearBogie : car.FrontBogie;
 
-                var currentTrack = leadingBogie?.track;
-                if (currentTrack == null)
+                var leadingTrack = leadingBogie?.track;
+                var trailingTrack = trailingBogie?.track;
+
+                if (leadingTrack != null)
+                    tracks.Add(leadingTrack);
+                if (trailingTrack != null && trailingTrack != leadingTrack)
+                    tracks.Add(trailingTrack);
+
+                if (tracks.Count == 0)
                     return tracks;
 
-                tracks.Add(currentTrack);
-
+                var currentTrack = leadingTrack ?? trailingTrack!;
                 var inNode = currentTrack.GetInNodeT();
                 var outNode = currentTrack.GetOutNodeT();
                 bool movingTowardsOut = inNode != null && outNode != null &&
@@ -418,40 +494,23 @@ namespace DvMod.HUDRevised
                         && Vector3.Dot(travelDirection, -definition.transform.forward) <= 0f)
                         continue;
 
-                    // Junction controllers can contain one signal per branch.
-                    // Let DVSignals select the active head for the aligned route
-                    // instead of assuming the first entry is the live signal.
-                    var signal = controllerInfo.GetControllerSignal?.Invoke(controller, null);
-                    if (signal == null)
-                    {
-                        // Compatibility fallback for DVSignals versions that do
-                        // not expose GetControllerSignal().
-                        var signals = controllerInfo.Signals?.GetValue(controller) as System.Collections.IEnumerable;
-                        if (signals != null)
-                        {
-                            foreach (var signalObject in signals)
-                            {
-                                if (signalObject != null)
-                                {
-                                    signal = signalObject;
-                                    break;
-                                }
-                            }
-                        }
-                    }
+                    var signal = GetActiveSignal(controller, controllerInfo);
                     if (signal == null)
                         continue;
 
-                    var signalCandidate = new SignalCandidate(signal, controllerInfo, distanceSquared);
+                    var signalCandidate = new SignalCandidate(signal, controller, controllerInfo, distanceSquared);
 
                     // 1. Route-aware matching:
                     var track = GetControllerTrack(controller, controllerInfo);
                     int routeIndex = track != null ? routeTracks.IndexOf(track) : -1;
                     if (routeIndex >= 0)
                     {
-                        // On the train's current track (index 0), signal must be in front of train.
-                        // On subsequent tracks along the route, it is forward along the route.
-                        if (routeIndex > 0 || forwardDist > 0.5f)
+                        int currentTrackCount = (car.FrontBogie?.track != null && car.RearBogie?.track != null && car.FrontBogie.track != car.RearBogie.track) ? 2 : 1;
+                        bool isCurrentTrack = routeIndex < currentTrackCount;
+
+                        // On current track(s), signal must be ahead of train (forwardDist > 0.5f).
+                        // On downstream tracks, it is ahead along the route.
+                        if (!isCurrentTrack || forwardDist > 0.5f)
                         {
                             if (!foundRouteCandidate
                                 || routeIndex < bestRouteIndex
@@ -689,8 +748,8 @@ namespace DvMod.HUDRevised
         private static SignalInfo BuildSignalInfo(SignalCandidate candidate)
         {
             var signalInfo = GetSignalProperties(candidate.Signal.GetType());
-            var name = ReadString(candidate.Signal, signalInfo.Name)
-                ?? ReadString(candidate.Signal, candidate.Controller.Name)
+            var name = ReadString(candidate.ControllerInstance, candidate.Controller.Name)
+                ?? ReadString(candidate.Signal, signalInfo.Name)
                 ?? "Signal";
             var aspect = signalInfo.CurrentAspect?.GetValue(candidate.Signal);
             var aspectInfo = aspect == null ? null : GetAspectProperties(aspect.GetType());
