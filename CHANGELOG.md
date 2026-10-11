@@ -2,6 +2,20 @@
 
 All notable changes to HUDRevised are recorded here.
 
+## [1.0.3]
+
+### Changed
+
+- Updated the signal panel to match ADS terminology by showing the next signal and displaying its distance in feet.
+
+### Fixed
+
+- Signal selection now accounts for floating-origin offsets, preventing the HUD from choosing the wrong signal after the world shifts.
+- Signal lookup now follows the locomotive's active route and filters adjacent-track signals in yards.
+- Yard shunting signals are now detected and displayed when no standard signal is active.
+- Signal names are now read from the controller correctly.
+- Signal lookup now considers both bogie tracks when a locomotive spans more than one track segment.
+
 ## [1.0.2]
 
 ### Added

@@ -2,7 +2,7 @@
   "Id": "HUDRevised",
   "DisplayName": "HUDRevised",
   "Author": "Zeibach",
-  "Version": "1.0.2",
+  "Version": "1.0.3",
   "LoadAfter": ["DVCustomCarLoader", "DVSignals", "Revised_Mph"],
   "AssemblyName": "HUDRevised.dll",
   "EntryMethod": "DvMod.HUDRevised.Main.Load",

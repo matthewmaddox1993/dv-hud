@@ -43,7 +43,7 @@ HUDRevised is a compact, Derail Valley-style driving HUD for Unity Mod Manager. 
 
 4. Start the game and enable HUDRevised in Unity Mod Manager.
 
-The built package is produced at `bin/Debug/netstandard2.0/HUDRevised-1.0.2.zip` when building this project.
+The built package is produced at `bin/Debug/netstandard2.0/HUDRevised-1.0.3.zip` when building this project.
 
 ## Compatible mods
 
