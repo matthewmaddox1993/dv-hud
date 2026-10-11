@@ -19,6 +19,10 @@ namespace DvMod.HUDRevised
             public readonly PropertyInfo? Signals;
             public readonly PropertyInfo? Definition;
             public readonly MethodInfo? GetControllerSignal;
+            public readonly PropertyInfo? PlacementInfo;
+            public readonly FieldInfo? PlacementTrack;
+            public readonly PropertyInfo? StartingTrack;
+            public readonly PropertyInfo? Junction;
 
             public ControllerProperties(Type type)
             {
@@ -32,6 +36,15 @@ namespace DvMod.HUDRevised
                     binder: null,
                     types: Type.EmptyTypes,
                     modifiers: null);
+
+                PlacementInfo = type.GetProperty("PlacementInfo", BindingFlags.Instance | BindingFlags.Public);
+                if (PlacementInfo != null)
+                {
+                    var underlying = Nullable.GetUnderlyingType(PlacementInfo.PropertyType) ?? PlacementInfo.PropertyType;
+                    PlacementTrack = underlying.GetField("Track", BindingFlags.Instance | BindingFlags.Public);
+                }
+                StartingTrack = type.GetProperty("StartingTrack", BindingFlags.Instance | BindingFlags.Public);
+                Junction = type.GetProperty("Junction", BindingFlags.Instance | BindingFlags.Public);
             }
         }
 
@@ -256,6 +269,87 @@ namespace DvMod.HUDRevised
             aspectProperties.Clear();
         }
 
+        private static RailTrack? GetControllerTrack(object controller, ControllerProperties info)
+        {
+            try
+            {
+                if (info.PlacementInfo != null && info.PlacementTrack != null)
+                {
+                    var placement = info.PlacementInfo.GetValue(controller);
+                    if (placement != null)
+                    {
+                        var track = info.PlacementTrack.GetValue(placement) as RailTrack;
+                        if (track != null)
+                            return track;
+                    }
+                }
+
+                if (info.StartingTrack != null)
+                {
+                    var track = info.StartingTrack.GetValue(controller) as RailTrack;
+                    if (track != null)
+                        return track;
+                }
+
+                if (info.Junction != null)
+                {
+                    var junction = info.Junction.GetValue(controller) as Junction;
+                    if (junction != null)
+                        return junction.inBranch?.track;
+                }
+            }
+            catch
+            {
+            }
+
+            return null;
+        }
+
+        private static List<RailTrack> GetRouteTracksAhead(TrainCar car, Vector3 travelDirection, int maxTracks = 25)
+        {
+            var tracks = new List<RailTrack>();
+            try
+            {
+                var forwardSpeed = car.GetForwardSpeed();
+                var reverser = car.GetComponent<DV.Simulation.Controllers.ReverserControl>();
+                bool forward = Mathf.Abs(forwardSpeed) > SignalDirectionSpeedThreshold
+                    ? forwardSpeed >= 0f
+                    : (reverser == null || reverser.Value >= DV.Simulation.Controllers.ReverserControl.NEUTRAL_VALUE);
+
+                var leadingBogie = forward ? car.FrontBogie : car.RearBogie;
+                if (leadingBogie == null)
+                    leadingBogie = car.FrontBogie ?? car.RearBogie;
+
+                var currentTrack = leadingBogie?.track;
+                if (currentTrack == null)
+                    return tracks;
+
+                tracks.Add(currentTrack);
+
+                var inNode = currentTrack.GetInNodeT();
+                var outNode = currentTrack.GetOutNodeT();
+                bool movingTowardsOut = inNode != null && outNode != null &&
+                    Vector3.Dot(travelDirection, outNode.position - inNode.position) > 0f;
+
+                for (int i = 0; i < maxTracks; i++)
+                {
+                    var branch = movingTowardsOut ? currentTrack.GetOutBranch() : currentTrack.GetInBranch();
+                    if (branch == null || branch.track == null || tracks.Contains(branch.track))
+                        break;
+
+                    currentTrack = branch.track;
+                    tracks.Add(currentTrack);
+                    movingTowardsOut = branch.first;
+                }
+            }
+            catch (Exception ex)
+            {
+                Main.DebugLog($"Failed to trace route tracks: {ex.Message}");
+            }
+
+            return tracks;
+        }
+
         public static bool TryGetSignalInfo(out SignalInfo current, out SignalInfo upcoming)
         {
             current = default;
@@ -277,10 +371,23 @@ namespace DvMod.HUDRevised
 
                 var origin = car.transform.position;
                 var travelDirection = GetSignalTravelDirection(car);
-                var foundCurrent = false;
-                var foundUpcoming = false;
-                SignalCandidate nearest = default;
-                SignalCandidate secondNearest = default;
+                var routeTracks = GetRouteTracksAhead(car, travelDirection);
+
+                var foundRouteCandidate = false;
+                var foundSecondRouteCandidate = false;
+                var bestRouteIndex = int.MaxValue;
+                var bestSecondRouteIndex = int.MaxValue;
+                var bestRouteForwardDist = float.MaxValue;
+                var bestSecondRouteForwardDist = float.MaxValue;
+                SignalCandidate routeNearest = default;
+                SignalCandidate routeSecondNearest = default;
+
+                var foundSpatialCandidate = false;
+                var foundSecondSpatialCandidate = false;
+                var bestSpatialForwardDist = float.MaxValue;
+                var bestSecondSpatialForwardDist = float.MaxValue;
+                SignalCandidate spatialNearest = default;
+                SignalCandidate spatialSecondNearest = default;
 
                 foreach (var controller in controllers)
                 {
@@ -300,9 +407,8 @@ namespace DvMod.HUDRevised
                         continue;
 
                     var offset = position - origin;
+                    var forwardDist = Vector3.Dot(travelDirection, offset);
                     var distanceSquared = offset.sqrMagnitude;
-                    if (distanceSquared < 1f || Vector3.Dot(travelDirection, offset) < -10f)
-                        continue;
 
                     // Opposing signal heads are often colocated, so proximity
                     // cannot distinguish them. DVSignals defines the controlled
@@ -311,6 +417,7 @@ namespace DvMod.HUDRevised
                     if (definition != null
                         && Vector3.Dot(travelDirection, -definition.transform.forward) <= 0f)
                         continue;
+
                     // Junction controllers can contain one signal per branch.
                     // Let DVSignals select the active head for the aligned route
                     // instead of assuming the first entry is the live signal.
@@ -337,27 +444,87 @@ namespace DvMod.HUDRevised
 
                     var signalCandidate = new SignalCandidate(signal, controllerInfo, distanceSquared);
 
-                    if (!foundCurrent || distanceSquared < nearest.DistanceSquared)
+                    // 1. Route-aware matching:
+                    var track = GetControllerTrack(controller, controllerInfo);
+                    int routeIndex = track != null ? routeTracks.IndexOf(track) : -1;
+                    if (routeIndex >= 0)
                     {
-                        secondNearest = nearest;
-                        foundUpcoming = foundCurrent;
-                        nearest = signalCandidate;
-                        foundCurrent = true;
+                        // On the train's current track (index 0), signal must be in front of train.
+                        // On subsequent tracks along the route, it is forward along the route.
+                        if (routeIndex > 0 || forwardDist > 0.5f)
+                        {
+                            if (!foundRouteCandidate
+                                || routeIndex < bestRouteIndex
+                                || (routeIndex == bestRouteIndex && forwardDist < bestRouteForwardDist))
+                            {
+                                routeSecondNearest = routeNearest;
+                                bestSecondRouteIndex = bestRouteIndex;
+                                bestSecondRouteForwardDist = bestRouteForwardDist;
+                                foundSecondRouteCandidate = foundRouteCandidate;
+
+                                foundRouteCandidate = true;
+                                bestRouteIndex = routeIndex;
+                                bestRouteForwardDist = forwardDist;
+                                routeNearest = signalCandidate;
+                            }
+                            else if (!foundSecondRouteCandidate
+                                || routeIndex < bestSecondRouteIndex
+                                || (routeIndex == bestSecondRouteIndex && forwardDist < bestSecondRouteForwardDist))
+                            {
+                                foundSecondRouteCandidate = true;
+                                bestSecondRouteIndex = routeIndex;
+                                bestSecondRouteForwardDist = forwardDist;
+                                routeSecondNearest = signalCandidate;
+                            }
+                        }
                     }
-                    else if (!foundUpcoming || distanceSquared < secondNearest.DistanceSquared)
+
+                    // 2. Spatial corridor fallback:
+                    // In yards, tracks are ~4.5m apart. Filter out signals on adjacent tracks
+                    // and any signals behind the train.
+                    if (forwardDist >= 0.5f)
                     {
-                        secondNearest = signalCandidate;
-                        foundUpcoming = true;
+                        var lateralVec = offset - travelDirection * forwardDist;
+                        var maxLateral = Mathf.Max(4.0f, forwardDist * 0.15f);
+                        if (lateralVec.sqrMagnitude <= maxLateral * maxLateral)
+                        {
+                            if (!foundSpatialCandidate || forwardDist < bestSpatialForwardDist)
+                            {
+                                spatialSecondNearest = spatialNearest;
+                                bestSecondSpatialForwardDist = bestSpatialForwardDist;
+                                foundSecondSpatialCandidate = foundSpatialCandidate;
+
+                                foundSpatialCandidate = true;
+                                bestSpatialForwardDist = forwardDist;
+                                spatialNearest = signalCandidate;
+                            }
+                            else if (!foundSecondSpatialCandidate || forwardDist < bestSecondSpatialForwardDist)
+                            {
+                                foundSecondSpatialCandidate = true;
+                                bestSecondSpatialForwardDist = forwardDist;
+                                spatialSecondNearest = signalCandidate;
+                            }
+                        }
                     }
                 }
 
-                if (!foundCurrent)
-                    return false;
+                if (foundRouteCandidate)
+                {
+                    current = BuildSignalInfo(routeNearest);
+                    if (foundSecondRouteCandidate)
+                        upcoming = BuildSignalInfo(routeSecondNearest);
+                    return true;
+                }
 
-                current = BuildSignalInfo(nearest);
-                if (foundUpcoming)
-                    upcoming = BuildSignalInfo(secondNearest);
-                return true;
+                if (foundSpatialCandidate)
+                {
+                    current = BuildSignalInfo(spatialNearest);
+                    if (foundSecondSpatialCandidate)
+                        upcoming = BuildSignalInfo(spatialSecondNearest);
+                    return true;
+                }
+
+                return false;
             }
             catch (Exception ex)
             {
