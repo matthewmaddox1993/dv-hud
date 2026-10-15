@@ -276,7 +276,9 @@ namespace DvMod.HUDRevised
             [Draw("Length units", Type = DrawType.ToggleGroup)] public LengthUnits lengthUnits = LengthUnits.m;
             [Draw("Car list")] public bool showCarList = true;
             [Draw("Update period", Min = 0f, VisibleOn = "showCarList|true")] public float updatePeriod = 0.25f;
-            [Draw("Group by job", VisibleOn = "showCarList|true")] public bool groupCarsByJob = true;
+            [Draw("Compact car list (beta)", VisibleOn = "showCarList|true")] public bool compactCarList;
+            [Draw("Show per-car details in compact list", VisibleOn = "compactCarList|true")] public bool compactCarDetails;
+            [Draw("Group compact list by job", VisibleOn = "compactCarList|true")] public bool groupCarsByJob = true;
             [Draw("Stress", VisibleOn = "showCarList|true")] public bool showCarStress = true;
             [Draw("Job ID", VisibleOn = "showCarList|true")] public bool showCarJobs = true;
             [Draw("Destination", VisibleOn = "showCarList|true")] public bool showCarDestinations = true;
@@ -310,7 +312,7 @@ namespace DvMod.HUDRevised
         [Draw("Lock position")] public bool lockPosition;
         [Draw("Only show inside locomotive")] public bool onlyShowInsideLocomotive;
 
-        public readonly string? version = Main.mod?.Info.Version;
+        public string? version = Main.mod?.Info.Version;
 
         public Vector2 hudPosition;
 

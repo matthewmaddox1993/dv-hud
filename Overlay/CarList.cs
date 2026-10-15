@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using DV.Logic.Job;
 using UnityEngine;
 
@@ -17,8 +18,12 @@ namespace DvMod.HUDRevised
         private const float CardGap = 6f;
         private const float DetailLineHeight = 14f;
         private const float ScrollbarReserve = 26f;
+        private const float CompactListMaxWidth = 420f;
+        private const float CompactRowHeight = 18f;
         private static Vector2 scrollPosition;
         private static List<CarDetails> details = new List<CarDetails>();
+        private static GUIStyle? compactJobStyle;
+        private static GUIStyle? compactCarsStyle;
 
         private readonly struct CarDetails
         {
@@ -69,7 +74,8 @@ namespace DvMod.HUDRevised
                     stress = $"{stressPercent:F0}%";
                 }
 
-                if ((settings.showCarJobs || settings.showCarDestinations)
+                if ((settings.showCarJobs || settings.showCarDestinations
+                    || (settings.compactCarList && settings.groupCarsByJob))
                     && jobsManager != null && car.logicCar != null)
                 {
                     var job = jobsManager.GetJobOfCar(car.logicCar, false);
@@ -136,6 +142,12 @@ namespace DvMod.HUDRevised
         public static void DrawCarList(IReadOnlyList<string> carIds)
         {
             var settings = Main.settings.trainInfoSettings;
+            if (settings.compactCarList)
+            {
+                DrawCompactCarList(carIds, settings);
+                return;
+            }
+
             var availableWidth = Mathf.Max(ColumnWidth + ScrollbarReserve,
                 Screen.width - Main.settings.hudPosition.x - 12f);
             var screenColumns = Mathf.Max(1, Mathf.FloorToInt(
@@ -243,6 +255,139 @@ namespace DvMod.HUDRevised
 
             GUI.EndScrollView();
             GUILayout.EndVertical();
+        }
+
+        private static void DrawCompactCarList(IReadOnlyList<string> carIds,
+            Settings.TrainInfoSettings settings)
+        {
+            var groups = new List<List<CarDetails>>();
+            var groupIndexes = new Dictionary<string, int>();
+
+            for (var index = 0; index < carIds.Count; index++)
+            {
+                var car = index < details.Count && details[index].Id == carIds[index]
+                    ? details[index]
+                    : new CarDetails(carIds[index], "—", "—", "—", "—", float.NaN, false);
+                var key = settings.groupCarsByJob
+                    ? car.Job == "—" ? "\0NO_JOB" : car.Job
+                    : $"\0CAR_{index}";
+                if (!groupIndexes.TryGetValue(key, out var groupIndex))
+                {
+                    groupIndex = groups.Count;
+                    groupIndexes.Add(key, groupIndex);
+                    groups.Add(new List<CarDetails>());
+                }
+
+                groups[groupIndex].Add(car);
+            }
+
+            var availableWidth = Mathf.Max(160f, Screen.width - Main.settings.hudPosition.x - 24f);
+            var listWidth = Mathf.Min(CompactListMaxWidth, availableWidth);
+            var jobStyle = compactJobStyle;
+            if (jobStyle == null)
+            {
+                jobStyle = new GUIStyle(Styles.carDetail)
+                {
+                    alignment = TextAnchor.MiddleLeft,
+                    clipping = TextClipping.Clip,
+                    fontSize = 9,
+                    margin = new RectOffset(0, 0, 0, 0),
+                    padding = new RectOffset(0, 0, 0, 0),
+                    wordWrap = false,
+                };
+                compactJobStyle = jobStyle;
+            }
+            var carsStyle = compactCarsStyle;
+            if (carsStyle == null)
+            {
+                carsStyle = new GUIStyle(Styles.carDetail)
+                {
+                    alignment = TextAnchor.MiddleLeft,
+                    clipping = TextClipping.Clip,
+                    fontSize = 9,
+                    margin = new RectOffset(0, 0, 0, 0),
+                    padding = new RectOffset(0, 0, 0, 0),
+                    wordWrap = true,
+                };
+                compactCarsStyle = carsStyle;
+            }
+
+            GUILayout.BeginVertical(GUILayout.Width(listWidth));
+            GUILayout.BeginHorizontal(GUILayout.Width(listWidth));
+            GUILayout.Label($"CARS  {carIds.Count}", Styles.subHeader);
+            GUILayout.FlexibleSpace();
+            GUILayout.Label("COMPACT", Styles.panelTag);
+            GUILayout.EndHorizontal();
+
+            foreach (var group in groups)
+            {
+                var job = group[0].Job == "—" ? "NO JOB" : $"JOB {group[0].Job}";
+                var destinations = new List<string>();
+                if (settings.showCarDestinations)
+                {
+                    foreach (var car in group)
+                    {
+                        if (car.Destination != "—" && !destinations.Contains(car.Destination))
+                            destinations.Add(car.Destination);
+                    }
+                }
+
+                var carText = string.Join("  ", group.Select(car => FormatCompactCar(car, settings)));
+                var jobWidth = settings.showCarJobs ? 80f : 0f;
+                var destinationWidth = settings.showCarDestinations ? 80f : 0f;
+                var carTextWidth = Mathf.Max(30f, listWidth - jobWidth - destinationWidth - 16f);
+                var destination = destinations.Count == 0 ? "—" : string.Join(", ", destinations);
+                var rowHeight = Mathf.Max(CompactRowHeight,
+                    carsStyle.CalcHeight(new GUIContent(carText), carTextWidth));
+                if (settings.showCarJobs)
+                    rowHeight = Mathf.Max(rowHeight, jobStyle.CalcHeight(new GUIContent(job), 74f));
+                if (settings.showCarDestinations)
+                    rowHeight = Mathf.Max(rowHeight,
+                        jobStyle.CalcHeight(new GUIContent(destination), 74f));
+                var rowRect = GUILayoutUtility.GetRect(listWidth, rowHeight,
+                    GUILayout.Width(listWidth), GUILayout.Height(rowHeight));
+                GUI.Box(rowRect, GUIContent.none, Styles.carCard);
+                var textX = rowRect.x + 4f;
+                var textWidth = rowRect.width - 8f;
+                if (settings.showCarJobs)
+                {
+                    GUI.Label(new Rect(textX, rowRect.y, 74f, rowRect.height), job, jobStyle);
+                    textX += jobWidth;
+                    textWidth -= jobWidth;
+                }
+
+                if (settings.showCarDestinations)
+                {
+                    GUI.Label(new Rect(textX, rowRect.y, 74f, rowRect.height),
+                        destination, jobStyle);
+                    textX += destinationWidth;
+                    textWidth -= destinationWidth;
+                }
+
+                GUI.Label(new Rect(textX, rowRect.y, Mathf.Max(0f, textWidth), rowRect.height),
+                    carText, carsStyle);
+            }
+
+            GUILayout.EndVertical();
+        }
+
+        private static string FormatCompactCar(CarDetails car, Settings.TrainInfoSettings settings)
+        {
+            var name = FormatCarName(car.Id).Replace('\n', ' ');
+            if (!settings.compactCarDetails)
+                return name;
+
+            var carDetails = new List<string>();
+            if (settings.showCarStress)
+                carDetails.Add($"S:{car.Stress}");
+            if (settings.showCarBrakeStatus)
+            {
+                var brake = car.Brake
+                    .Replace(" bar  F ", "bar/")
+                    .Replace(" %", "%");
+                carDetails.Add($"B:{brake}");
+            }
+            return carDetails.Count == 0 ? name : $"{name} ({string.Join(",", carDetails)})";
         }
 
         private static string FormatCarName(string name)

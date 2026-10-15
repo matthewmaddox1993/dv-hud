@@ -2,6 +2,17 @@
 
 All notable changes to HUDRevised are recorded here.
 
+## [1.0.4]
+
+### Added
+
+- Beta compact consist list that shows all cars without scrolling and can group cars by job.
+
+### Improved
+
+- Capped the compact consist list at 420 pixels wide and wrapped long job rows so the HUD stays narrower while still showing every car.
+- Kept per-car stress and brake details optional in compact mode to reduce clutter.
+
 ## [1.0.3]
 
 ### Changed

@@ -23,8 +23,14 @@ namespace DvMod.HUDRevised
             try
             {
                 var loaded = Settings.Load<Settings>(modEntry);
-                if (loaded.version == modEntry.Info.Version)
+                var loadedBaseVersion = loaded.version?.Split('-')[0];
+                var currentBaseVersion = modEntry.Info.Version.Split('-')[0];
+                // Beta/release variants with the same base version share settings.
+                if (loadedBaseVersion == currentBaseVersion || loaded.version == "1.0.4")
+                {
+                    loaded.version = modEntry.Info.Version;
                     settings = loaded;
+                }
                 else
                     settings = new Settings();
             }

@@ -2,15 +2,30 @@
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
     <RootNamespace>DvMod.HUDRevised</RootNamespace>
-    <Version>1.0.3</Version>
-    <InformationalVersion>1.0.3</InformationalVersion>
+    <Configurations>Debug;Release;Beta</Configurations>
+    <Version>1.0.4</Version>
+    <InformationalVersion>1.0.4</InformationalVersion>
     <LangVersion>8.0</LangVersion>
     <Nullable>enable</Nullable>
     <!-- Override this property when Derail Valley is installed elsewhere. -->
     <DerailValleyDir Condition="'$(DerailValleyDir)' == ''">D:\Games\Derail Valley</DerailValleyDir>
     <DerailValleyManagedDir>$(DerailValleyDir)\DerailValley_Data\Managed</DerailValleyManagedDir>
     <UnityModManagerDir>$(DerailValleyManagedDir)\UnityModManager</UnityModManagerDir>
+    <AssemblyVersion>1.0.0.3</AssemblyVersion>
+    <FileVersion>1.0.0.3</FileVersion>
   </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Beta'">
+    <Version>1.0.4-beta</Version>
+    <InformationalVersion>$(Version)</InformationalVersion>
+    <Optimize>true</Optimize>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+  <Version>1.0.4</Version>
+  <InformationalVersion>$(Version)</InformationalVersion>
+  <Optimize>true</Optimize>
+</PropertyGroup>
 
   <ItemGroup>
     <Compile Remove="QuantitiesNet\**\*.cs" />
@@ -49,8 +64,8 @@
   </ItemGroup>
 
   <PropertyGroup>
-    <PackageStagingDir>$(IntermediateOutputPath)HUDRevisedPackage</PackageStagingDir>
-    <PackageArchive>$(ProjectDir)bin\$(Configuration)\$(TargetFramework)\$(AssemblyName)-$(InformationalVersion).zip</PackageArchive>
+    <PackageStagingDir>$(BaseIntermediateOutputPath)$(Configuration)\$(TargetFramework)\HUDRevisedPackage</PackageStagingDir>
+    <PackageArchive>$(ProjectDir)bin\$(Configuration)\$(TargetFramework)\$(AssemblyName)-$(Version).zip</PackageArchive>
   </PropertyGroup>
 
   <Target Name="PackageMod" AfterTargets="Build">
@@ -58,7 +73,7 @@
     <MakeDir Directories="$(PackageStagingDir)" />
     <Copy SourceFiles="$(TargetPath);$(TargetDir)QuantitiesNet.dll;$(ProjectDir)info.json;$(ProjectDir)README.md;$(ProjectDir)CHANGELOG.md"
           DestinationFolder="$(PackageStagingDir)" />
-    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -Command &quot;Compress-Archive -Path '$(PackageStagingDir)\*' -DestinationPath '$(PackageArchive)' -Force&quot;" />
+    <ZipDirectory SourceDirectory="$(PackageStagingDir)" DestinationFile="$(PackageArchive)" Overwrite="true" />
     <Message Importance="high" Text="Created mod package: $(PackageArchive)" />
   </Target>
 </Project>

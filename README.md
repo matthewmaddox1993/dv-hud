@@ -16,8 +16,10 @@ HUDRevised is a compact, Derail Valley-style driving HUD for Unity Mod Manager. 
 - Current and upcoming signal information when DVSignals is installed.
 - Signal distance display.
 - Train length and car-count display.
-- Scrollable, multi-column train-consist list with each car's ID, derail stress,
-  job ID, destination, and brake status (controlled by the car-list settings).
+- Scrollable, multi-column train-consist cards, or an optional compact list that
+  groups cars by job and shows the entire consist without a scrollbar.
+- Per-car derail stress, job ID, destination, and brake status (controlled by
+  the car-list settings).
 - Multiline car names for organized consist layouts.
 - Optional display restriction so the HUD only appears while inside a locomotive.
 - Position locking and a Reset position button.
@@ -43,7 +45,7 @@ HUDRevised is a compact, Derail Valley-style driving HUD for Unity Mod Manager. 
 
 4. Start the game and enable HUDRevised in Unity Mod Manager.
 
-The built package is produced at `bin/Debug/netstandard2.0/HUDRevised-1.0.3.zip` when building this project.
+The built package is produced under `bin/<Configuration>/netstandard2.0/` after each build. The Beta configuration creates `HUDRevised-1.0.4-beta.zip`.
 
 ## Compatible mods
 
@@ -62,6 +64,9 @@ Open the HUDRevised settings in Unity Mod Manager. The active options include:
 - Enable or disable driving-info, train-info, and signal sections.
 - Choose the train-length unit: metres or feet.
 - Show or hide the car list.
+- Enable the beta compact list and optionally group its car rows by job.
+- Compact mode keeps the consist list at or below 420 pixels wide and wraps
+  long job rows; per-car stress and brake details can be enabled separately.
 - Show the current signal, upcoming signal, and signal distance.
 - Lock the HUD position.
 - Show the HUD only while inside a locomotive.
@@ -85,7 +90,7 @@ or:
 L-001\\nBOXCAR
 ```
 
-Car cards reserve two lines for names so the columns stay aligned while showing identifiers and vehicle types.
+Car cards reserve two lines for names so the columns stay aligned while showing identifiers and vehicle types. In compact-list mode, cars with the same job appear together in a row, wrapping across multiple lines when needed; the list stays at or below 420 pixels wide and shows every car without scrolling. Per-car stress and brake details are hidden by default in compact mode to keep the HUD small, and can be enabled with **Show per-car details in compact list**. Cars without an assigned job are grouped together when job grouping is enabled.
 
 The `STRESS` percentage is the car's current live train-stress magnitude divided by the game's derail-stress threshold. It can exceed 100% briefly; sustained stress above that threshold causes the game to accumulate derail buildup. A stationary or gently moving car normally reads near 0%.
 
@@ -118,11 +123,21 @@ Install and enable DVSignals, then load into a world where signal objects are av
 
 The project targets `.NET Standard 2.0` and references the Derail Valley managed assemblies configured in `HUDRevised.csproj`.
 
+Open `HUDRevised.sln` in Rider and choose **Beta** from the build-configuration selector to build the beta package.
+
 ```powershell
 dotnet build .\HUDRevised.csproj --no-restore
 ```
 
-The build creates the DLL and release archive under `bin/Debug/netstandard2.0/`.
+Build the beta package with:
+
+```powershell
+dotnet build .\HUDRevised.csproj --configuration Beta --no-restore
+```
+
+Each build creates a versioned ZIP containing the mod DLL, `QuantitiesNet.dll`,
+`info.json`, `README.md`, and `CHANGELOG.md` under
+`bin/<Configuration>/netstandard2.0/`.
 
 ## Source and credits
 
